@@ -1,0 +1,700 @@
+--[[
+🎃 Mascara Cat Hub - Glass Bridge 2 (FULL Expanded)
+- LocalScript (StarterPlayerScripts / StarterGui)
+- Tính năng:
+  • Multi-tab GUI (Main / Player / Visual / Teleports / Misc)
+  • Rainbow theme + draggable + resizable
+  • Toggles: AutoCross, Speed Boost, Glass ESP
+  • Player tools: Fly, Noclip, Rainbow Name
+  • Teleports: Forward, To End (best-effort)
+  • Misc: Anti-AFK, AutoWin (best-effort), Toggle All
+  • UI niceties: tooltips, buttons, sliders, state persistence per session
+- Lưu ý: một số tính năng là best-effort vì server-side logic có thể chặn.
+--]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local Debris = game:GetService("Debris")
+local VirtualUser = game:GetService("VirtualUser")
+
+local plr = Players.LocalPlayer
+local playerGui = plr:WaitForChild("PlayerGui")
+local char = plr.Character or plr.CharacterAdded:Wait()
+local function refreshChar()
+	char = plr.Character or plr.CharacterAdded:Wait()
+end
+plr.CharacterAdded:Connect(function() task.wait(0.1); refreshChar() end)
+
+-- ======= Config / State =======
+local STATE = {
+	autoCross = false,
+	speedBoost = false,
+	speed = 40,
+	esp = false,
+	fly = false,
+	noclip = false,
+	rainbowName = false,
+	antiAFK = false,
+	autoWin = false,
+	teleportDistance = 10,
+	guiVisible = true
+}
+
+-- ======= Helper utilities =======
+local function safePcall(fn) local ok, a = pcall(fn); if not ok then return nil end; return a end
+local function clamped(n, minv, maxv) return math.max(minv, math.min(maxv, n)) end
+
+-- ======= Create GUI =======
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "MascaraCatHub_Full"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+-- Main window
+local main = Instance.new("Frame")
+main.Name = "MainWindow"
+main.Size = UDim2.new(0, 520, 0, 380)
+main.Position = UDim2.new(0.25, 0, 0.15, 0)
+main.BackgroundColor3 = Color3.fromRGB(28,28,28)
+main.BorderSizePixel = 0
+main.Active = true
+main.Draggable = true
+main.Parent = screenGui
+
+-- Top bar
+local top = Instance.new("Frame", main)
+top.Size = UDim2.new(1, 0, 0, 48)
+top.Position = UDim2.new(0, 0, 0, 0)
+top.BackgroundTransparency = 1
+
+local title = Instance.new("TextLabel", top)
+title.Size = UDim2.new(1, -160, 0, 48)
+title.Position = UDim2.new(0, 0, 0, 0)
+title.BackgroundTransparency = 1
+title.Font = Enum.Font.GothamBold
+title.TextSize = 18
+title.Text = "🎃 Mascara Cat Hub - Glass Bridge 2 (FULL)"
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.TextColor3 = Color3.new(1,1,1)
+
+local playerLabel = Instance.new("TextLabel", top)
+playerLabel.Size = UDim2.new(0, 160, 0, 18)
+playerLabel.Position = UDim2.new(1, -160, 0, 6)
+playerLabel.BackgroundTransparency = 1
+playerLabel.Font = Enum.Font.Gotham
+playerLabel.TextSize = 14
+playerLabel.Text = "Player: "..plr.Name
+playerLabel.TextColor3 = Color3.new(1,1,1)
+
+local subtitle = Instance.new("TextLabel", top)
+subtitle.Size = UDim2.new(0, 160, 0, 16)
+subtitle.Position = UDim2.new(1, -160, 0, 26)
+subtitle.BackgroundTransparency = 1
+subtitle.Font = Enum.Font.Gotham
+subtitle.TextSize = 10
+subtitle.Text = "Glass Bridge 2"
+subtitle.TextColor3 = Color3.fromRGB(200,200,200)
+
+local closeBtn = Instance.new("TextButton", top)
+closeBtn.Size = UDim2.new(0, 28, 0, 28)
+closeBtn.Position = UDim2.new(1, -32, 0, 10)
+closeBtn.Text = "✕"
+closeBtn.Font = Enum.Font.Gotham
+closeBtn.TextSize = 14
+closeBtn.BackgroundTransparency = 0.6
+closeBtn.BackgroundColor3 = Color3.fromRGB(60,60,60)
+closeBtn.TextColor3 = Color3.fromRGB(255,200,200)
+closeBtn.BorderSizePixel = 0
+
+closeBtn.MouseButton1Click:Connect(function()
+	STATE.guiVisible = not STATE.guiVisible
+	main.Visible = STATE.guiVisible
+end)
+
+-- Left: Tabs
+local tabsFrame = Instance.new("Frame", main)
+tabsFrame.Size = UDim2.new(0, 160, 1, -58)
+tabsFrame.Position = UDim2.new(0, 12, 0, 54)
+tabsFrame.BackgroundTransparency = 1
+
+local function makeTabBtn(parent, text, y)
+	local b = Instance.new("TextButton", parent)
+	b.Size = UDim2.new(1, 0, 0, 38)
+	b.Position = UDim2.new(0, 0, 0, y)
+	b.BackgroundColor3 = Color3.fromRGB(40,40,40)
+	b.BorderSizePixel = 0
+	b.Font = Enum.Font.Gotham
+	b.Text = text
+	b.TextSize = 13
+	b.TextColor3 = Color3.new(1,1,1)
+	return b
+end
+
+local tabButtons = {}
+tabButtons[1] = makeTabBtn(tabsFrame, "Main", 0)
+tabButtons[2] = makeTabBtn(tabsFrame, "Player", 44)
+tabButtons[3] = makeTabBtn(tabsFrame, "Visual", 88)
+tabButtons[4] = makeTabBtn(tabsFrame, "Teleports", 132)
+tabButtons[5] = makeTabBtn(tabsFrame, "Misc", 176)
+
+-- Right: Content area
+local content = Instance.new("Frame", main)
+content.Size = UDim2.new(1, -196, 1, -64)
+content.Position = UDim2.new(0, 176, 0, 54)
+content.BackgroundTransparency = 1
+
+local sections = {}
+for i=1,5 do
+	local s = Instance.new("Frame", content)
+	s.Size = UDim2.new(1, 0, 1, 0)
+	s.Position = UDim2.new(0, 0, 0, 0)
+	s.BackgroundTransparency = 1
+	s.Visible = (i==1)
+	sections[i] = s
+end
+
+local function clearChildren(frame)
+	for _,c in pairs(frame:GetChildren()) do
+		if not (c:IsA("UIListLayout") or c:IsA("UIPadding")) then
+			c:Destroy()
+		end
+	end
+end
+
+-- UI Helpers: toggle, button, slider
+local function makeToggle(parent, label, posY)
+	local f = Instance.new("Frame", parent)
+	f.Size = UDim2.new(1, -12, 0, 36)
+	f.Position = UDim2.new(0, 6, 0, posY)
+	f.BackgroundTransparency = 1
+	local lbl = Instance.new("TextLabel", f)
+	lbl.Size = UDim2.new(0.66, 0, 1, 0)
+	lbl.BackgroundTransparency = 1
+	lbl.Font = Enum.Font.Gotham
+	lbl.TextSize = 14
+	lbl.Text = label
+	lbl.TextColor3 = Color3.new(1,1,1)
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
+	local btn = Instance.new("TextButton", f)
+	btn.Size = UDim2.new(0.32, -4, 0.8, 0)
+	btn.Position = UDim2.new(0.68, 4, 0.1, 0)
+	btn.BackgroundColor3 = Color3.fromRGB(55,55,55)
+	btn.BorderSizePixel = 0
+	btn.Font = Enum.Font.Gotham
+	btn.TextSize = 13
+	btn.Text = "OFF"
+	btn.TextColor3 = Color3.new(1,1,1)
+	return btn
+end
+
+local function makeButtonCompact(parent, text, posY)
+	local b = Instance.new("TextButton", parent)
+	b.Size = UDim2.new(1, -12, 0, 34)
+	b.Position = UDim2.new(0, 6, 0, posY)
+	b.BackgroundColor3 = Color3.fromRGB(45,45,45)
+	b.BorderSizePixel = 0
+	b.Font = Enum.Font.Gotham
+	b.Text = text
+	b.TextSize = 14
+	b.TextColor3 = Color3.new(1,1,1)
+	return b
+end
+
+local function makeLabel(parent, text, posY)
+	local l = Instance.new("TextLabel", parent)
+	l.Size = UDim2.new(1, -12, 0, 24)
+	l.Position = UDim2.new(0, 6, 0, posY)
+	l.BackgroundTransparency = 1
+	l.Font = Enum.Font.Gotham
+	l.TextSize = 13
+	l.Text = text
+	l.TextColor3 = Color3.fromRGB(200,200,200)
+	l.TextXAlignment = Enum.TextXAlignment.Left
+	return l
+end
+
+-- ======= Fill contents for each tab =======
+
+-- Tab 1: Main
+do
+	local s = sections[1]
+	makeLabel(s, "Core features", 6)
+	local tAuto = makeToggle(s, "Auto Cross Bridge", 36)
+	local tSpeed = makeToggle(s, "Speed Boost", 80)
+	local speedLabel = makeLabel(s, "Speed: "..tostring(STATE.speed), 120)
+	local speedIncrease = makeButtonCompact(s, "Increase Speed", 150)
+	local speedDecrease = makeButtonCompact(s, "Decrease Speed", 190)
+	local tESP = makeToggle(s, "Glass ESP", 230)
+	local teleportBtn = makeButtonCompact(s, "Teleport Forward", 270)
+	local toggleAll = makeButtonCompact(s, "Toggle ALL (ON/OFF)", 310)
+
+	-- wiring
+	tAuto.MouseButton1Click:Connect(function()
+		STATE.autoCross = not STATE.autoCross
+		tAuto.Text = STATE.autoCross and "ON" or "OFF"
+	end)
+	tSpeed.MouseButton1Click:Connect(function()
+		STATE.speedBoost = not STATE.speedBoost
+		tSpeed.Text = STATE.speedBoost and "ON" or "OFF"
+	end)
+	speedIncrease.MouseButton1Click:Connect(function()
+		STATE.speed = clamped(STATE.speed + 4, 16, 120)
+		speedLabel.Text = "Speed: "..tostring(STATE.speed)
+	end)
+	speedDecrease.MouseButton1Click:Connect(function()
+		STATE.speed = clamped(STATE.speed - 4, 16, 120)
+		speedLabel.Text = "Speed: "..tostring(STATE.speed)
+	end)
+	tESP.MouseButton1Click:Connect(function()
+		STATE.esp = not STATE.esp
+		tESP.Text = STATE.esp and "ON" or "OFF"
+	end)
+	teleportBtn.MouseButton1Click:Connect(function()
+		if char and char:FindFirstChild("HumanoidRootPart") then
+			local hrp = char.HumanoidRootPart
+			local forward = hrp.CFrame.LookVector
+			hrp.CFrame = hrp.CFrame + forward * STATE.teleportDistance
+		end
+	end)
+	toggleAll.MouseButton1Click:Connect(function()
+		local on = not (STATE.autoCross and STATE.speedBoost and STATE.esp and STATE.fly)
+		STATE.autoCross = on; STATE.speedBoost = on; STATE.esp = on; STATE.fly = on
+		-- UI reflectors (quick hack: rebuild tab)
+		tAuto.Text = STATE.autoCross and "ON" or "OFF"
+		tSpeed.Text = STATE.speedBoost and "ON" or "OFF"
+		tESP.Text = STATE.esp and "ON" or "OFF"
+	end)
+end
+
+-- Tab 2: Player
+do
+	local s = sections[2]
+	makeLabel(s, "Player utilities", 6)
+	local flyToggle = makeToggle(s, "Fly (Hold Space to ascend)", 36)
+	local noclipToggle = makeToggle(s, "Noclip (pass through parts)", 84)
+	local rainbowNameToggle = makeToggle(s, "Rainbow Name Above Head", 132)
+	local restore = makeButtonCompact(s, "Restore Defaults", 180)
+
+	flyToggle.MouseButton1Click:Connect(function()
+		STATE.fly = not STATE.fly
+		flyToggle.Text = STATE.fly and "ON" or "OFF"
+	end)
+	noclipToggle.MouseButton1Click:Connect(function()
+		STATE.noclip = not STATE.noclip
+		noclipToggle.Text = STATE.noclip and "ON" or "OFF"
+	end)
+	rainbowNameToggle.MouseButton1Click:Connect(function()
+		STATE.rainbowName = not STATE.rainbowName
+		rainbowNameToggle.Text = STATE.rainbowName and "ON" or "OFF"
+	end)
+	restore.MouseButton1Click:Connect(function()
+		STATE.speed = 40
+		STATE.autoCross = false
+		STATE.speedBoost = false
+		STATE.esp = false
+		STATE.fly = false
+		STATE.noclip = false
+		STATE.rainbowName = false
+		-- reflect (simple)
+		for _,v in pairs(s:GetChildren()) do
+			if v:IsA("TextButton") then v.Text = (v.Text:match("ON") and "OFF") or v.Text end
+		end
+	end)
+end
+
+-- Tab 3: Visual
+do
+	local s = sections[3]
+	makeLabel(s, "Visual tweaks", 6)
+	local espToggle = makeToggle(s, "Glass ESP", 36)
+	local rainbowGUIToggle = makeToggle(s, "Rainbow GUI Theme", 84)
+	local guiScaleLabel = makeLabel(s, "GUI Scale (Mouse Wheel): Default 1.0", 132)
+
+	espToggle.MouseButton1Click:Connect(function()
+		STATE.esp = not STATE.esp
+		espToggle.Text = STATE.esp and "ON" or "OFF"
+	end)
+	rainbowGUIToggle.MouseButton1Click:Connect(function()
+		-- this simply toggles hue updates below
+		STATE.rainbowGUI = not STATE.rainbowGUI
+		rainbowGUIToggle.Text = STATE.rainbowGUI and "ON" or "OFF"
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseWheel then
+			local delta = input.Position.Z
+			local sx, sy = main.Size.X.Scale, main.Size.Y.Scale
+			local nx = main.Size.X.Offset + delta * 6
+			local ny = main.Size.Y.Offset + delta * 4
+			main.Size = UDim2.new(0, clamped(nx, 360, 900), 0, clamped(ny, 260, 700))
+		end
+	end)
+end
+
+-- Tab 4: Teleports
+do
+	local s = sections[4]
+	makeLabel(s, "Teleports", 6)
+	local tpForward = makeButtonCompact(s, "Teleport Forward (short)", 36)
+	local tpFar = makeButtonCompact(s, "Teleport Far Forward", 76)
+	local tpToEnd = makeButtonCompact(s, "Teleport To End (best-effort)", 116)
+
+	tpForward.MouseButton1Click:Connect(function()
+		if char and char:FindFirstChild("HumanoidRootPart") then
+			local hrp = char.HumanoidRootPart
+			hrp.CFrame = hrp.CFrame + hrp.CFrame.LookVector * 12
+		end
+	end)
+	tpFar.MouseButton1Click:Connect(function()
+		if char and char:FindFirstChild("HumanoidRootPart") then
+			local hrp = char.HumanoidRootPart
+			hrp.CFrame = hrp.CFrame + hrp.CFrame.LookVector * 40
+		end
+	end)
+	tpToEnd.MouseButton1Click:Connect(function()
+		-- Best-effort: try to find "Finish", "End", or highest part named "Goal"
+		local candidates = {}
+		for _,obj in pairs(workspace:GetDescendants()) do
+			if obj:IsA("BasePart") and (obj.Name:lower():find("finish") or obj.Name:lower():find("end") or obj.Name:lower():find("goal")) then
+				table.insert(candidates, obj)
+			end
+		end
+		if #candidates > 0 then
+			local target = candidates[#candidates]
+			if target and char and char:FindFirstChild("HumanoidRootPart") then
+				char.HumanoidRootPart.CFrame = target.CFrame + Vector3.new(0, 3, 0)
+			end
+		else
+			-- fallback: teleport far forward repeatedly to try reach end
+			if char and char:FindFirstChild("HumanoidRootPart") then
+				char.HumanoidRootPart.CFrame = char.HumanoidRootPart.CFrame + char.HumanoidRootPart.CFrame.LookVector * 200
+			end
+		end
+	end)
+end
+
+-- Tab 5: Misc
+do
+	local s = sections[5]
+	makeLabel(s, "Misc utilities", 6)
+	local antiAFKBtn = makeToggle(s, "Anti-AFK", 36)
+	local autoWinBtn = makeToggle(s, "Auto Win (best-effort)", 84)
+	local announceBtn = makeButtonCompact(s, "Play Success Sound (local)", 124)
+
+	antiAFKBtn.MouseButton1Click:Connect(function()
+		STATE.antiAFK = not STATE.antiAFK
+		antiAFKBtn.Text = STATE.antiAFK and "ON" or "OFF"
+	end)
+	autoWinBtn.MouseButton1Click:Connect(function()
+		STATE.autoWin = not STATE.autoWin
+		autoWinBtn.Text = STATE.autoWin and "ON" or "OFF"
+	end)
+	announceBtn.MouseButton1Click:Connect(function()
+		-- local nice sound feedback (best effort using Sound instance)
+		if char and char:FindFirstChild("HumanoidRootPart") then
+			local s = Instance.new("Sound", char.HumanoidRootPart)
+			s.SoundId = "rbxassetid://142070127" -- short ding (may not exist in some contexts)
+			s.Volume = 1
+			s:Play()
+			Debris:AddItem(s, 4)
+		end
+	end)
+end
+
+-- Tab switching
+for i,btn in pairs(tabButtons) do
+	btn.MouseButton1Click:Connect(function()
+		for j,sec in pairs(sections) do
+			sec.Visible = (i==j)
+		end
+		-- highlight active
+		for _,b in pairs(tabButtons) do b.BackgroundColor3 = Color3.fromRGB(40,40,40) end
+		btn.BackgroundColor3 = Color3.fromRGB(70,40,110)
+	end)
+end
+tabButtons[1].BackgroundColor3 = Color3.fromRGB(70,40,110)
+
+-- ======= Visual: Rainbow GUI =======
+local hue = 0
+STATE.rainbowGUI = true
+RunService.RenderStepped:Connect(function(dt)
+	if STATE.rainbowGUI then
+		hue = (hue + 0.4 * dt) % 1
+		local c = Color3.fromHSV(hue, 0.85, 1)
+		title.TextColor3 = c
+		for _,b in pairs(tabButtons) do
+			-- slight gradient effect
+			if b.BackgroundColor3 ~= Color3.fromRGB(70,40,110) then
+				b.BackgroundColor3 = Color3.fromRGB(40,40,40):Lerp(c, 0.08)
+			end
+		end
+	end
+end)
+
+-- ======= ESP system (BoxHandleAdornment) =======
+local espBoxes = {}
+local function clearESP()
+	for part,box in pairs(espBoxes) do
+		if box then pcall(function() box:Destroy() end) end
+	end
+	espBoxes = {}
+end
+
+local function scanForGlass()
+	-- heuristic: parts containing 'glass' in name or small flat anchored parts
+	for _,v in pairs(workspace:GetDescendants()) do
+		if v:IsA("BasePart") then
+			local lname = v.Name:lower()
+			if lname:find("glass") or lname:find("tile") or (v.Size.Y < 2 and v.Size.X > 1 and v.Size.Z > 1) then
+				if not espBoxes[v] then
+					local adorn = Instance.new("BoxHandleAdornment")
+					adorn.Adornee = v
+					adorn.AlwaysOnTop = true
+					adorn.Size = v.Size + Vector3.new(0.02,0.02,0.02)
+					adorn.ZIndex = 5
+					adorn.Transparency = 0.35
+					adorn.Parent = v
+					espBoxes[v] = adorn
+				end
+			end
+		end
+	end
+end
+
+-- update ESP colors based on simple heuristics (.CanCollide)
+RunService.Heartbeat:Connect(function()
+	if STATE.esp then
+		scanForGlass()
+		for part,box in pairs(espBoxes) do
+			if not part or not part.Parent then
+				if box then pcall(function() box:Destroy() end) end
+				espBoxes[part] = nil
+			else
+				if part.CanCollide then
+					box.Color3 = Color3.fromRGB(0, 220, 60) -- safe
+					box.Transparency = 0.25
+				else
+					box.Color3 = Color3.fromRGB(220, 40, 40) -- unsafe
+					box.Transparency = 0.35
+				end
+			end
+		end
+	else
+		-- clear if not enabled
+		if next(espBoxes) then clearESP() end
+	end
+end)
+
+-- ======= AutoCross logic (improved) =======
+local lastTick = 0
+local function findTileInFront(origin, distance)
+	local forward = origin.CFrame.LookVector
+	local castPoint = origin.Position + forward * distance + Vector3.new(0, 2, 0)
+	local params = RaycastParams.new()
+	params.FilterDescendantsInstances = {char}
+	params.FilterType = Enum.RaycastFilterType.Blacklist
+	local result = workspace:Raycast(castPoint, Vector3.new(0, -30, 0), params)
+	if result and result.Instance then
+		return result.Instance, result.Position
+	end
+	return nil, nil
+end
+
+RunService.Heartbeat:Connect(function(dt)
+	-- speed application
+	if char and char:FindFirstChildOfClass("Humanoid") then
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		if STATE.speedBoost then
+			hum.WalkSpeed = STATE.speed
+		else
+			if hum.WalkSpeed ~= 16 then hum.WalkSpeed = 16 end
+		end
+	end
+
+	-- AutoCross ticking
+	lastTick = lastTick + dt
+	if STATE.autoCross and lastTick > 0.08 then
+		lastTick = 0
+		if char and char:FindFirstChild("HumanoidRootPart") then
+			local hrp = char.HumanoidRootPart
+			local part, pos = findTileInFront(hrp, 6)
+			if part and part.CanCollide and part.Anchored then
+				-- smooth tween to tile center
+				pcall(function()
+					local target = CFrame.new(pos + Vector3.new(0, 3, 0))
+					local tw = TweenService:Create(hrp, TweenInfo.new(0.12, Enum.EasingStyle.Linear), {CFrame = target})
+					tw:Play()
+				end)
+			else
+				-- if unsafe, try small jump-forward
+				if char and char:FindFirstChildOfClass("Humanoid") then
+					local hum = char:FindFirstChildOfClass("Humanoid")
+					hum:ChangeState(Enum.HumanoidStateType.Jumping)
+					local bv = Instance.new("BodyVelocity")
+					bv.MaxForce = Vector3.new(9e4, 9e4, 9e4)
+					bv.Velocity = (hrp.CFrame.LookVector * 18) + Vector3.new(0, 16, 0)
+					bv.Parent = hrp
+					Debris:AddItem(bv, 0.12)
+				end
+			end
+		end
+	end
+end)
+
+-- ======= Fly & Noclip =======
+local flyVelocity = nil
+local flySpeed = 60
+local flyingUp = false
+local flyingDown = false
+
+UserInputService.InputBegan:Connect(function(inp, gp)
+	if gp then return end
+	if inp.KeyCode == Enum.KeyCode.Space then flyingUp = true end
+	if inp.KeyCode == Enum.KeyCode.LeftControl then flyingDown = true end
+end)
+UserInputService.InputEnded:Connect(function(inp)
+	if inp.KeyCode == Enum.KeyCode.Space then flyingUp = false end
+	if inp.KeyCode == Enum.KeyCode.LeftControl then flyingDown = false end
+end)
+
+RunService.Stepped:Connect(function()
+	-- Noclip
+	if STATE.noclip and char then
+		for _,part in pairs(char:GetDescendants()) do
+			if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+				part.CanCollide = false
+			end
+		end
+	end
+
+	-- Fly
+	if STATE.fly and char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChildOfClass("Humanoid") then
+		local hrp = char.HumanoidRootPart
+		if not flyVelocity or not flyVelocity.Parent then
+			flyVelocity = Instance.new("BodyVelocity")
+			flyVelocity.MaxForce = Vector3.new(9e5, 9e5, 9e5)
+			flyVelocity.Parent = hrp
+		end
+		local moveVec = Vector3.new(0,0,0)
+		local cam = workspace.CurrentCamera
+		local forward = cam.CFrame.LookVector
+		local right = cam.CFrame.RightVector
+		if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveVec = moveVec + forward end
+		if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveVec = moveVec - forward end
+		if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveVec = moveVec - right end
+		if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveVec = moveVec + right end
+		if flyingUp then moveVec = moveVec + Vector3.new(0,1,0) end
+		if flyingDown then moveVec = moveVec - Vector3.new(0,1,0) end
+		flyVelocity.Velocity = moveVec.Unit == moveVec and moveVec * flySpeed or moveVec * flySpeed
+		-- prevent falling damage state
+		char:FindFirstChildOfClass("Humanoid").PlatformStand = false
+	else
+		if flyVelocity then
+			pcall(function() flyVelocity:Destroy() end)
+			flyVelocity = nil
+		end
+	end
+end)
+
+-- ======= Rainbow Name (Billboard GUI) =======
+local bb = nil
+local bbLabel = nil
+local function ensureBillboard()
+	if not char then return end
+	if not bb or not bb.Parent then
+		bb = Instance.new("BillboardGui")
+		bb.Size = UDim2.new(0,140,0,30)
+		bb.AlwaysOnTop = true
+		bb.StudsOffset = Vector3.new(0, 2.4, 0)
+		bb.Parent = char:WaitForChild("HumanoidRootPart")
+		bbLabel = Instance.new("TextLabel", bb)
+		bbLabel.Size = UDim2.new(1,0,1,0)
+		bbLabel.BackgroundTransparency = 1
+		bbLabel.Font = Enum.Font.GothamBold
+		bbLabel.TextSize = 14
+		bbLabel.TextStrokeTransparency = 0.6
+		bbLabel.Text = plr.Name
+		bbLabel.TextColor3 = Color3.fromRGB(255,255,255)
+	end
+end
+
+local hueName = 0
+RunService.Heartbeat:Connect(function(dt)
+	if STATE.rainbowName then
+		ensureBillboard()
+		hueName = (hueName + 0.8 * dt) % 1
+		if bbLabel then
+			bbLabel.TextColor3 = Color3.fromHSV(hueName, 0.9, 1)
+		end
+	else
+		if bb and bb.Parent then
+			pcall(function() bb:Destroy() end)
+			bb = nil
+			bbLabel = nil
+		end
+	end
+end)
+
+-- ======= Anti-AFK =======
+local lastAnti = 0
+RunService.Heartbeat:Connect(function(dt)
+	if STATE.antiAFK then
+		lastAnti = lastAnti + dt
+		if lastAnti > 60 then
+			lastAnti = 0
+			-- VirtualUser trick
+			VirtualUser:CaptureController()
+			VirtualUser:ClickButton2(Vector2.new(0,0))
+		end
+	end
+end)
+
+-- ======= AutoWin (best-effort): repeatedly attempt to teleport to end or press finish triggers =======
+task.spawn(function()
+	while task.wait(1) do
+		if STATE.autoWin then
+			-- try teleport to end object
+			local found = nil
+			for _,obj in pairs(workspace:GetDescendants()) do
+				if obj:IsA("BasePart") and (obj.Name:lower():find("finish") or obj.Name:lower():find("end") or obj.Name:lower():find("goal")) then
+					found = obj; break
+				end
+			end
+			if found and char and char:FindFirstChild("HumanoidRootPart") then
+				char.HumanoidRootPart.CFrame = found.CFrame + Vector3.new(0,3,0)
+			else
+				-- fallback small progressive teleport forward
+				if char and char:FindFirstChild("HumanoidRootPart") then
+					char.HumanoidRootPart.CFrame = char.HumanoidRootPart.CFrame + char.HumanoidRootPart.CFrame.LookVector * 50
+				end
+			end
+		end
+	end
+end)
+
+-- ======= Clean up ESP on close / leave =======
+plr.AncestryChanged:Connect(function()
+	if not plr:IsDescendantOf(game) then
+		clearESP()
+	end
+end)
+
+-- ======= Small UX: keyboard shortcuts =======
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == Enum.KeyCode.H then
+		STATE.guiVisible = not STATE.guiVisible
+		main.Visible = STATE.guiVisible
+	end
+	if input.KeyCode == Enum.KeyCode.B then
+		STATE.esp = not STATE.esp
+	end
+	if input.KeyCode == Enum.KeyCode.O then
+		STATE.autoCross = not STATE.autoCross
+	end
+end)
+
+-- ======= Final message =======
+print("🎃 Mascara Cat Hub - FULL Loaded")
