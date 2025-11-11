@@ -1,0 +1,363 @@
+-- Mascara Cat Hub - Rainbow Combined (God hidden, WallHop visible, draggable, mobile-friendly)
+-- Paste into a LocalScript (StarterGui / StarterPlayerScripts)
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- Character refs
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:FindFirstChildOfClass("Humanoid")
+player.CharacterAdded:Connect(function(chr)
+	character = chr
+	humanoid = chr:WaitForChild("Humanoid")
+end)
+
+-- State
+local GodMode = false
+local WallHopToggle = false
+local InfiniteJumpEnabled = true
+local RainbowEnabled = true
+
+-- Raycast params
+local raycastParams = RaycastParams.new()
+raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+
+local function safeUnit(v)
+	if not v then return Vector3.new(0,0,0) end
+	if v.Magnitude < 1e-4 then return Vector3.new(0,0,0) end
+	return v.Unit
+end
+
+local function getWallRaycastResult()
+	local chr = player.Character
+	if not chr then return nil end
+	local root = chr:FindFirstChild("HumanoidRootPart")
+	if not root then return nil end
+	raycastParams.FilterDescendantsInstances = {chr}
+	local directions = {
+		root.CFrame.LookVector,
+		-root.CFrame.LookVector,
+		root.CFrame.RightVector,
+		-root.CFrame.RightVector
+	}
+	local detectionDistance = 2
+	local closestHit = nil
+	local minDistance = detectionDistance + 1
+	for _, dir in pairs(directions) do
+		local res = Workspace:Raycast(root.Position, dir * detectionDistance, raycastParams)
+		if res and res.Instance and res.Distance < minDistance then
+			minDistance = res.Distance
+			closestHit = res
+		end
+	end
+	return closestHit
+end
+
+-- God Mode loop (keeps health full while enabled)
+task.spawn(function()
+	while true do
+		if GodMode and humanoid then
+			pcall(function()
+				humanoid.MaxHealth = math.huge
+				humanoid.Health = math.huge
+			end)
+		end
+		task.wait(0.12)
+	end
+end)
+
+-- GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "MascaraCatHub_HiddenGod"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local Frame = Instance.new("Frame")
+Frame.Name = "MainFrame"
+Frame.Size = UDim2.new(0, 320, 0, 220)
+Frame.Position = UDim2.new(0.32, 0, 0.28, 0)
+Frame.BackgroundColor3 = Color3.fromRGB(20,20,20)
+Frame.BorderSizePixel = 0
+Frame.Active = true
+Frame.ClipsDescendants = true
+Frame.Parent = screenGui
+
+local UICorner = Instance.new("UICorner", Frame)
+UICorner.CornerRadius = UDim.new(0, 12)
+local UIStroke = Instance.new("UIStroke", Frame)
+UIStroke.Thickness = 3
+UIStroke.Color = Color3.fromRGB(255,0,255)
+
+-- Title (generic)
+local Title = Instance.new("TextLabel", Frame)
+Title.Size = UDim2.new(0.6, 0, 0, 36)
+Title.Position = UDim2.new(0.02, 0, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "Mascara Cat Hub v5"
+Title.Font = Enum.Font.GothamBold
+Title.TextScaled = true
+Title.TextColor3 = Color3.new(1,1,1)
+
+-- Body
+local Body = Instance.new("Frame", Frame)
+Body.Position = UDim2.new(0, 12, 0, 44)
+Body.Size = UDim2.new(1, -24, 1, -76)
+Body.BackgroundTransparency = 1
+
+-- WallHop visible tab
+local WallFrame = Instance.new("Frame", Body)
+WallFrame.Size = UDim2.new(1,0,1,0)
+WallFrame.BackgroundTransparency = 1
+WallFrame.Visible = true
+
+local WallStatus = Instance.new("TextLabel", WallFrame)
+WallStatus.Size = UDim2.new(1,0,0,28)
+WallStatus.Position = UDim2.new(0,0,0,0)
+WallStatus.BackgroundTransparency = 1
+WallStatus.Font = Enum.Font.GothamBold
+WallStatus.TextScaled = true
+WallStatus.Text = "WallHop: Off"
+WallStatus.TextColor3 = Color3.fromRGB(200,50,50)
+
+local WallOn = Instance.new("TextButton", WallFrame)
+WallOn.Size = UDim2.new(0.42,0,0,40)
+WallOn.Position = UDim2.new(0.03,0,0,44)
+WallOn.Text = "On"
+WallOn.Font = Enum.Font.GothamBold
+WallOn.TextScaled = true
+WallOn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+WallOn.BorderSizePixel = 0
+
+local WallOff = Instance.new("TextButton", WallFrame)
+WallOff.Size = UDim2.new(0.42,0,0,40)
+WallOff.Position = UDim2.new(0.55,0,0,44)
+WallOff.Text = "Off"
+WallOff.Font = Enum.Font.GothamBold
+WallOff.TextScaled = true
+WallOff.BackgroundColor3 = Color3.fromRGB(50,50,50)
+WallOff.BorderSizePixel = 0
+
+local DestroyBtn = Instance.new("TextButton", WallFrame)
+DestroyBtn.Size = UDim2.new(0.94,0,0,36)
+DestroyBtn.Position = UDim2.new(0.03,0,0,96)
+DestroyBtn.Text = "Destroy Menu"
+DestroyBtn.Font = Enum.Font.GothamBold
+DestroyBtn.TextScaled = true
+DestroyBtn.BackgroundColor3 = Color3.fromRGB(45,45,45)
+DestroyBtn.BorderSizePixel = 0
+local DestroyCorner = Instance.new("UICorner", DestroyBtn)
+DestroyCorner.CornerRadius = UDim.new(0,8)
+
+-- God hidden tab (no obvious labels)
+local GodFrame = Instance.new("Frame", Body)
+GodFrame.Size = UDim2.new(1,0,1,0)
+GodFrame.BackgroundTransparency = 1
+GodFrame.Visible = false -- start hidden
+
+-- Minimal subtle toggle for God (small lock icon only)
+local HiddenGodButton = Instance.new("TextButton", GodFrame)
+HiddenGodButton.Size = UDim2.new(0.18,0,0,34)
+HiddenGodButton.Position = UDim2.new(0.02,0,0,6)
+HiddenGodButton.Text = "God Mode"
+HiddenGodButton.Font = Enum.Font.Gotham
+HiddenGodButton.TextScaled = true
+HiddenGodButton.BackgroundColor3 = Color3.fromRGB(35,35,35)
+HiddenGodButton.BorderSizePixel = 0
+HiddenGodButton.AutoButtonColor = true
+local HiddenGodCorner = Instance.new("UICorner", HiddenGodButton)
+HiddenGodCorner.CornerRadius = UDim.new(0,6)
+
+-- To make it less obvious, keep no "GOD MODE" text. Button toggles the mode.
+local GodSmallStatus = Instance.new("TextLabel", GodFrame)
+GodSmallStatus.Size = UDim2.new(0.6,0,0,28)
+GodSmallStatus.Position = UDim2.new(0.22,0,0,6)
+GodSmallStatus.BackgroundTransparency = 1
+GodSmallStatus.Font = Enum.Font.Gotham
+GodSmallStatus.TextScaled = true
+GodSmallStatus.Text = "" -- intentionally blank to hide purpose
+GodSmallStatus.TextColor3 = Color3.fromRGB(200,200,200)
+
+-- Bottom secret tab-toggle button visible to everyone
+local BottomToggle = Instance.new("TextButton", Frame)
+BottomToggle.Size = UDim2.new(1, -25, 0, 39)
+BottomToggle.Position = UDim2.new(0, 12, 1, -44)
+BottomToggle.Text = "    Trở lại ◀️     ▶️ Quay lại"
+BottomToggle.Font = Enum.Font.GothamBold
+BottomToggle.TextScaled = true
+BottomToggle.BackgroundColor3 = Color3.fromRGB(40,40,40)
+BottomToggle.BorderSizePixel = 0
+local BottomCorner = Instance.new("UICorner", BottomToggle)
+BottomCorner.CornerRadius = UDim.new(0,8)
+
+-- Tab switch function (BottomToggle toggles which frame shows)
+local function showWall()
+	WallFrame.Visible = true
+	GodFrame.Visible = false
+	-- make Wall status obvious
+	WallStatus.Visible = true
+end
+local function showGod()
+	WallFrame.Visible = false
+	GodFrame.Visible = true
+	-- keep God small status hidden text
+end
+
+BottomToggle.MouseButton1Click:Connect(function()
+	if GodFrame.Visible then
+		showWall()
+	else
+		showGod()
+	end
+end)
+
+-- Button behaviors
+WallOn.MouseButton1Click:Connect(function()
+	WallHopToggle = true
+	WallStatus.Text = "WallHop: On"
+	WallStatus.TextColor3 = Color3.fromRGB(0,200,100)
+end)
+WallOff.MouseButton1Click:Connect(function()
+	WallHopToggle = false
+	WallStatus.Text = "WallHop: Off"
+	WallStatus.TextColor3 = Color3.fromRGB(200,50,50)
+end)
+DestroyBtn.MouseButton1Click:Connect(function()
+	screenGui:Destroy()
+end)
+
+-- Hidden god toggle behavior (small icon toggles the hidden God mode)
+HiddenGodButton.MouseButton1Click:Connect(function()
+	GodMode = not GodMode
+	-- subtle visual feedback: change icon background briefly
+	if GodMode then
+		HiddenGodButton.BackgroundColor3 = Color3.fromRGB(70,90,70)
+		GodSmallStatus.Text = "" -- remain blank on purpose
+	else
+		HiddenGodButton.BackgroundColor3 = Color3.fromRGB(35,35,35)
+		GodSmallStatus.Text = ""
+	end
+end)
+
+-- Allow hidden status reapply on respawn
+player.CharacterAdded:Connect(function(chr)
+	character = chr
+	humanoid = chr:WaitForChild("Humanoid")
+	if GodMode and humanoid then
+		pcall(function()
+			humanoid.MaxHealth = math.huge
+			humanoid.Health = math.huge
+		end)
+	end
+end)
+
+-- WallHop jump logic
+UserInputService.JumpRequest:Connect(function()
+	if not WallHopToggle or not InfiniteJumpEnabled then return end
+	local chr = player.Character
+	local hum = chr and chr:FindFirstChildOfClass("Humanoid")
+	local root = chr and chr:FindFirstChild("HumanoidRootPart")
+	local cam = Workspace.CurrentCamera
+	if not (hum and root and cam) then return end
+
+	local hit = getWallRaycastResult()
+	if hit then
+		InfiniteJumpEnabled = false
+		local wallNormal = hit.Normal
+		local horizontalWallNormal = Vector3.new(wallNormal.X, 0, wallNormal.Z)
+		if horizontalWallNormal.Magnitude < 0.1 then
+			horizontalWallNormal = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
+			if horizontalWallNormal.Magnitude < 0.1 then horizontalWallNormal = Vector3.new(0,0,-1) end
+		end
+		horizontalWallNormal = horizontalWallNormal.Unit
+
+		local baseDir = horizontalWallNormal
+		local cameraLook = cam.CFrame.LookVector
+		local horizontalCameraLook = Vector3.new(cameraLook.X, 0, cameraLook.Z)
+		if horizontalCameraLook.Magnitude < 0.1 then horizontalCameraLook = baseDir end
+		horizontalCameraLook = horizontalCameraLook.Unit
+
+		local maxInfluenceAngle = math.rad(40)
+		local dot = math.clamp(baseDir:Dot(horizontalCameraLook), -1, 1)
+		local angleBetween = math.acos(dot)
+		local cross = baseDir:Cross(horizontalCameraLook)
+		local rotationSign = math.sign(cross.Y)
+		if rotationSign == 0 then angleBetween = 0 end
+		local actualAngle = math.min(angleBetween, maxInfluenceAngle)
+		local adjustmentRotation = CFrame.Angles(0, actualAngle * rotationSign, 0)
+		local lookDir = adjustmentRotation * baseDir
+
+		root.CFrame = CFrame.lookAt(root.Position, root.Position + lookDir)
+		RunService.Heartbeat:Wait()
+		if hum and hum:GetState() ~= Enum.HumanoidStateType.Dead then
+			hum:ChangeState(Enum.HumanoidStateType.Jumping)
+			-- rotate back towards wall
+			root.CFrame = CFrame.lookAt(root.Position, root.Position - baseDir)
+		end
+		task.wait(0.15)
+		InfiniteJumpEnabled = true
+	end
+end)
+
+-- Rainbow animation
+task.spawn(function()
+	local hue = 0
+	while RainbowEnabled do
+		hue = (hue + 0.005) % 1
+		local color = Color3.fromHSV(hue, 1, 1)
+		UIStroke.Color = color
+		Title.TextColor3 = color
+		WallOn.TextColor3 = color
+		WallOff.TextColor3 = color
+		BottomToggle.TextColor3 = color
+		HiddenGodButton.TextColor3 = color
+		RunService.Heartbeat:Wait()
+	end
+end)
+
+-- Dragging (mobile + mouse friendly)
+local dragging = false
+local dragInput, dragStart, startPos
+
+local function update(input)
+	local delta = input.Position - dragStart
+	Frame.Position = UDim2.new(
+		math.clamp(startPos.X.Scale, 0, 1),
+		startPos.X.Offset + delta.X,
+		math.clamp(startPos.Y.Scale, 0, 1),
+		startPos.Y.Offset + delta.Y
+	)
+end
+
+Frame.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = true
+		dragStart = input.Position
+		startPos = Frame.Position
+		dragInput = input
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+
+Frame.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement then
+		dragInput = input
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if dragging and input == dragInput then
+		update(input)
+	end
+end)
+
+print("✅ Mascara Cat Hub - Hidden God + WallHop loaded.")
